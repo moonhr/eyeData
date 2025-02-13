@@ -97,7 +97,7 @@ class EyeDataProcessor:
                     self.log_message(f"Warning: Eye 폴더를 찾을 수 없습니다 - {eye_folder}")
                     continue
                 
-                eye_files = glob.glob(os.path.join(eye_folder, 'EyeData*_sequence_result.xlsx'))
+                eye_files = glob.glob(os.path.join(eye_folder, 'EyeData*_with_Area_processed.xlsx'))
                 
                 if not eye_files:
                     self.log_message(f"Warning: EyeData 파일을 찾을 수 없습니다 - {eye_folder}")
@@ -124,19 +124,12 @@ class EyeDataProcessor:
                             'Environment': env_num
                         }
                         
-                        # Sequence별 Time과 Area 정보 추가
-                        max_sequence = df['Sequence'].max()
-                        for seq in range(1, max_sequence + 1):
-                            seq_data = df[df['Sequence'] == seq]
-                            col_name = str(seq)
-                            
-                            if not seq_data.empty:
-                                time_row[col_name] = seq_data['Time (s)'].iloc[0]
-                                area_value = seq_data['Area'].iloc[0]
-                                area_row[col_name] = f"{area_value} " if pd.notna(area_value) else ''
-                            else:
-                                time_row[col_name] = ''
-                                area_row[col_name] = ''
+                        # 모든 영역을 순서대로 처리
+                        current_seq = 1
+                        for idx, row in df.iterrows():
+                            area_row[str(current_seq)] = row['ProductArea'] if pd.notna(row['ProductArea']) else ''
+                            time_row[str(current_seq)] = row['Time difference'] if pd.notna(row['Time difference']) else ''
+                            current_seq += 1
                         
                         # 두 행을 DataFrame에 추가 (Area 행이 먼저, Time 행이 나중에)
                         final_df = pd.concat([final_df, pd.DataFrame([area_row, time_row])], ignore_index=True)
