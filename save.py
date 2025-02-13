@@ -97,7 +97,6 @@ class EyeDataProcessor:
                     self.log_message(f"Warning: Eye 폴더를 찾을 수 없습니다 - {eye_folder}")
                     continue
                 
-                # sequence_result 파일 검색
                 eye_files = glob.glob(os.path.join(eye_folder, 'EyeData*_sequence_result.xlsx'))
                 
                 if not eye_files:
@@ -113,26 +112,47 @@ class EyeDataProcessor:
                         # 엑셀 파일 읽기
                         df = pd.read_excel(eye_file)
                         
-                        # Area 정보가 있는 경우 Sequence와 Area 결합
-                        sequence_data = df[['Sequence', 'Area', 'Time (s)']]
+                        # Time 행과 Area 행을 따로 생성
+                        time_row = {
+                            'participant': get_folder_number(participant_path),
+                            'UT-HED': 1,
+                            'Environment': env_num
+                        }
+                        area_row = {
+                            'participant': get_folder_number(participant_path),
+                            'UT-HED': 1,
+                            'Environment': env_num
+                        }
                         
-                        # 각 행을 딕셔너리로 변환
-                        for _, row in sequence_data.iterrows():
-                            row_dict = {
-                                'participant': get_folder_number(participant_path),
-                                'UT-HED': 1,
-                                'Environment': env_num,
-                                str(row['Sequence']): row['Time (s)'],
-                                f"{row['Sequence']}_area": row['Area'] if pd.notna(row['Area']) else ''
-                            }
-                            final_df = pd.concat([final_df, pd.DataFrame([row_dict])], ignore_index=True)
+                        # Sequence별 Time과 Area 정보 추가
+                        max_sequence = df['Sequence'].max()
+                        for seq in range(1, max_sequence + 1):
+                            seq_data = df[df['Sequence'] == seq]
+                            col_name = str(seq)
+                            
+                            if not seq_data.empty:
+                                time_row[col_name] = seq_data['Time (s)'].iloc[0]
+                                area_value = seq_data['Area'].iloc[0]
+                                area_row[col_name] = f"{area_value} " if pd.notna(area_value) else ''
+                            else:
+                                time_row[col_name] = ''
+                                area_row[col_name] = ''
                         
+                        # 두 행을 DataFrame에 추가 (Area 행이 먼저, Time 행이 나중에)
+                        final_df = pd.concat([final_df, pd.DataFrame([area_row, time_row])], ignore_index=True)
                         self.log_message(f"Environment {env_num} 처리 완료")
                         
                     except Exception as e:
                         self.log_message(f"Error processing file {eye_file}: {str(e)}")
             
             if not final_df.empty:
+                # 컬럼 순서 재정렬
+                base_cols = ['participant', 'UT-HED', 'Environment']
+                seq_cols = [str(i) for i in range(1, final_df.shape[1])]
+                seq_cols = [col for col in seq_cols if col in final_df.columns]
+                
+                final_df = final_df[base_cols + seq_cols]
+                
                 save_path = os.path.join(os.getcwd(), 'combined_eye_data.csv')
                 final_df.to_csv(save_path, index=False)
                 self.log_message(f"데이터 처리가 완료되었습니다.")
