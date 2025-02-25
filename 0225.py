@@ -50,6 +50,102 @@ def process_eye_data(input_file, output_file, areas):
                 # 결과에 추가
                 writer.writerow([area, time_diff])
 
+def merge_consecutive_areas(input_file, output_file):
+    """연속된 같은 영역의 시간을 합산하는 함수"""
+    with open(input_file, 'r', newline='') as f:
+        reader = csv.reader(f)
+        header = next(reader)  # 헤더 읽기
+        
+        # 결과 파일 준비
+        with open(output_file, 'w', newline='') as out_f:
+            writer = csv.writer(out_f)
+            writer.writerow(header)  # 헤더 작성
+            
+            current_area = None
+            accumulated_time = 0
+            
+            for row in reader:
+                area = row[0]
+                try:
+                    time_diff = float(row[1])
+                except ValueError:
+                    time_diff = 0
+                
+                # 첫 번째 행이거나 영역이 변경된 경우
+                if current_area is None:
+                    current_area = area
+                    accumulated_time = time_diff
+                elif area != current_area:
+                    # 이전 영역의 누적 시간 기록 (소수점 3자리까지 반올림)
+                    writer.writerow([current_area, round(accumulated_time, 3)])
+                    # 새 영역 시작
+                    current_area = area
+                    accumulated_time = time_diff
+                else:
+                    # 같은 영역이 계속되는 경우 시간 누적
+                    accumulated_time += time_diff
+            
+            # 마지막 영역 기록 (소수점 3자리까지 반올림)
+            if current_area is not None:
+                writer.writerow([current_area, round(accumulated_time, 3)])
+
+def process_and_merge_direct(input_file, output_file, areas):
+    """원본 데이터를 처리하고 연속된 영역을 합산하는 함수 (임시 파일 없이)"""
+    # 1단계: 원본 데이터에서 영역 식별하여 메모리에 저장
+    area_time_pairs = []
+    
+    with open(input_file, 'r', newline='') as f:
+        reader = csv.DictReader(f)
+        
+        for row in reader:
+            # 필요한 데이터 추출
+            try:
+                x = float(row["Gaze PositionX"]) if row["Gaze PositionX"] else 0
+                z = float(row["Gaze PositionZ"]) if row["Gaze PositionZ"] else 0
+                layer_name = row["Layer Name"]
+                time_diff = float(row["Time difference"]) if row["Time difference"] and row["Time difference"] != "#VALUE!" else 0
+                velocity = float(row["Velocity"]) if row["Velocity"] and row["Velocity"] != "#VALUE!" else 0
+            except ValueError:
+                # 변환 오류 시 기본값 설정
+                x, z, time_diff, velocity = 0, 0, 0, 0
+            
+            # 속도가 100 초과인 경우 'Z'로 설정
+            if velocity > 100:
+                area = "Z"
+            else:
+                # 영역 식별
+                area = identify_area(x, z, layer_name, areas)
+            
+            # 메모리에 저장
+            area_time_pairs.append((area, time_diff))
+    
+    # 2단계: 연속된 같은 영역 합산하여 파일에 저장
+    with open(output_file, 'w', newline='') as out_f:
+        writer = csv.writer(out_f)
+        writer.writerow(["Area", "Time difference"])  # 헤더 작성
+        
+        if not area_time_pairs:
+            return  # 데이터가 없으면 종료
+        
+        current_area = area_time_pairs[0][0]
+        accumulated_time = area_time_pairs[0][1]
+        
+        for i in range(1, len(area_time_pairs)):
+            area, time_diff = area_time_pairs[i]
+            
+            if area != current_area:
+                # 이전 영역의 누적 시간 기록 (소수점 3자리까지 반올림)
+                writer.writerow([current_area, round(accumulated_time, 3)])
+                # 새 영역 시작
+                current_area = area
+                accumulated_time = time_diff
+            else:
+                # 같은 영역이 계속되는 경우 시간 누적
+                accumulated_time += time_diff
+        
+        # 마지막 영역 기록 (소수점 3자리까지 반올림)
+        writer.writerow([current_area, round(accumulated_time, 3)])
+
 # 메인 실행 코드
 if __name__ == "__main__":
     # 영역 정의
@@ -87,6 +183,7 @@ if __name__ == "__main__":
         }
     }
     
-    # 데이터 처리 실행
-    process_eye_data("EyeData1.csv", "EyeData1_processed.csv", areas)
-    print("처리 완료: EyeData1_processed.csv 파일이 생성되었습니다.")
+    # 데이터 처리 및 합산 실행 (임시 파일 없이)
+    merged_file = "EyeData1_merged.csv"
+    process_and_merge_direct("EyeData1.csv", merged_file, areas)
+    print(f"처리 완료: {merged_file} 파일이 생성되었습니다.")
